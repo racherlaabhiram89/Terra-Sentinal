@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APAAR Student Data Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--ink:#14263B;--mute:#5A6B7D;--bg:#EDF0F3;--card:#fff;--line:#D5DBE2;--teal:#0A6C74;--teal-d:#07535A;
+--amber:#B26A00;--red:#B3261E;--green:#1E7B4B;--blue:#2F5D9E;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--ink:#E6ECF2;--mute:#9AABBD;--bg:#0F1B28;--card:#162536;--line:#2A3D52;--teal:#3DB5BF;--teal-d:#6CD0D8;--amber:#E0A040;--red:#F08178;--green:#5CC58C;--blue:#7FA8E6;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Public Sans',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5}
+header{background:var(--teal-d);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+@media (prefers-color-scheme:dark){header{background:#0B3A40}}
+header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.2px}
+header .who{margin-left:auto;font-size:13px;opacity:.9;display:flex;gap:12px;align-items:center}
+nav{display:flex;gap:2px;padding:0 24px;background:var(--card);border-bottom:1px solid var(--line);overflow-x:auto}
+nav button{background:none;border:0;padding:12px 14px;font:inherit;color:var(--mute);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+nav button.on{color:var(--teal);border-bottom-color:var(--teal);font-weight:600}
+nav button:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+main{max-width:1180px;margin:0 auto;padding:22px 24px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:18px;margin-bottom:18px}
+h2{font-size:17px;margin:0 0 12px}h3{font-size:15px;margin:0 0 8px}
+.grid{display:grid;gap:16px}.g4{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+.stat b{display:block;font-size:30px;font-weight:700}.stat span{color:var(--mute);font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600;font-size:13px}
+.wrap{overflow-x:auto}
+button.btn{background:var(--teal);color:#fff;border:0;border-radius:4px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer}
+button.btn.alt{background:transparent;color:var(--teal);border:1px solid var(--teal)}
+button.btn.sm{padding:4px 10px;font-size:13px}
+@media (prefers-color-scheme:dark){button.btn{color:#08222A}}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:var(--card);color:var(--ink);width:100%}
+label{display:block;font-size:13px;color:var(--mute);margin-bottom:3px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.row>div{flex:1;min-width:140px}
+.pill{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:600;border:1px solid currentColor}
+.verified{color:var(--green)}.warning{color:var(--amber)}.flagged{color:var(--red)}.rejected{color:var(--red);background:rgba(179,38,30,.1)}
+.high{color:var(--red)}.medium{color:var(--amber)}.error{color:var(--red)}
+.muted{color:var(--mute)}.small{font-size:13px}
+pre{background:var(--bg);padding:12px;border-radius:4px;overflow:auto;font-size:12.5px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:4px;display:none;max-width:90vw;z-index:9}
+.login{max-width:400px;margin:70px auto}
+.demo td{padding:3px 8px;font-size:13px}
+canvas{max-height:260px}
+.issue{padding:6px 0;border-bottom:1px dashed var(--line)}
+.hide{display:none}
+@media (prefers-reduced-motion:no-preference){button.btn{transition:background .15s}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status"></div>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+let S = JSON.parse(sessionStorage.getItem('apaar') || 'null');
+let charts = {};
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const toast = (m) => { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._t); t._t = setTimeout(() => t.style.display = 'none', 4500); };
+
+async function api(path, opts = {}) {
+  const h = {...(opts.headers || {})};
+  if (S) h.Authorization = 'Bearer ' + S.token;
+  if (opts.json) { h['Content-Type'] = 'application/json'; opts.body = JSON.stringify(opts.json); }
+  const r = await fetch(path, {...opts, headers: h});
+  if (r.status === 401 && S && !path.includes('/login')) { logout(); throw new Error('Session expired'); }
+  const ct = r.headers.get('content-type') || '';
+  const data = ct.includes('json') ? await r.json() : await r.text();
+  if (!r.ok) { const m = data.detail || data; throw new Error(typeof m === 'string' ? m : JSON.stringify(m)); }
+  return data;
+}
+const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message); } };
+function logout() { S = null; sessionStorage.removeItem('apaar'); render(); }
+
+const TABS = {
+  aicte_admin: ['Overview', 'Students', 'Issues', 'Anomalies', 'Intake', 'Reports', 'Audit', 'Verify'],
+  institution: ['Overview', 'Upload', 'Students', 'Issues'],
+  employer: ['Verify'],
+  regulator: ['Overview', 'Anomalies', 'Reports', 'Audit', 'Verify']
+};
+let tab = null;
+
+function render() {
+  if (!S) return renderLogin();
+  const tabs = TABS[S.role]; if (!tabs.includes(tab)) tab = tabs[0];
+  $('#app').innerHTML = `<header><h1>APAAR Student Data Platform</h1>
+    <div class="who"><span>${esc(S.name)}${S.institution ? ' · ' + esc(S.institution) : ''}</span>
+    <button class="btn alt sm" style="color:#fff;border-color:#fff" onclick="logout()">Sign out</button></div></header>
+    <nav>${tabs.map(t => `<button class="${t === tab ? 'on' : ''}" onclick="go('${t}')">${t}</button>`).join('')}</nav>
+    <main id="view"></main>`;
+  guard(views[tab])();
+}
+const go = t => { tab = t; render(); };
+
+function renderLogin() {
+  $('#app').innerHTML = `<div class="login card"><h2>Sign in</h2>
+    <label for="u">Username</label><input id="u" autocomplete="username">
+    <label for="p" style="margin-top:10px">Password</label><input id="p" type="password" autocomplete="current-password">
+    <p><button class="btn" id="go">Sign in</button> <button class="btn alt" id="cons">Student consent</button></p>
+    <details><summary class="small muted">Demo accounts</summary><table class="demo">
+    <tr><td>admin</td><td>admin123</td><td class="muted">AICTE</td></tr>
+    <tr><td>inst1 – inst4</td><td>inst123</td><td class="muted">Institution</td></tr>
+    <tr><td>employer</td><td>emp123</td><td class="muted">Employer</td></tr>
+    <tr><td>regulator</td><td>reg123</td><td class="muted">Auditor</td></tr></table></details></div>
+    <div id="view"></div>`;
+  $('#go').onclick = guard(async () => {
+    S = await api('/api/login', {method: 'POST', json: {username: $('#u').value, password: $('#p').value}});
+    sessionStorage.setItem('apaar', JSON.stringify(S)); tab = null; render();
+  });
+  $('#p').onkeydown = e => { if (e.key === 'Enter') $('#go').click(); };
+  $('#cons').onclick = () => { $('.login').classList.add('hide'); consentView(); };
+}
+
+function consentView() {
+  $('#view').innerHTML = `<main><div class="card" style="max-width:480px;margin:40px auto"><h2>Student consent</h2>
+  <p class="small muted">Employers can see your full details only after you allow it. You can withdraw consent at any time.</p>
+  <label>APAAR ID</label><input id="ca"><label style="margin-top:8px">Date of birth</label><input id="cd" type="date">
+  <p><button class="btn" id="cy">Allow verification</button> <button class="btn alt" id="cn">Withdraw consent</button>
+  <button class="btn alt" onclick="render()">Back</button></p></div></main>`;
+  const send = g => guard(async () => { await api('/api/consent', {method: 'POST', json: {apaar_id: $('#ca').value.trim(), dob: $('#cd').value, granted: g}}); toast(g ? 'Consent recorded' : 'Consent withdrawn'); });
+  $('#cy').onclick = send(true); $('#cn').onclick = send(false);
+}
+
+const badge = s => `<span class="pill ${s}">${s}</span>`;
+const sevb = s => `<span class="${s}">${s}</span>`;
+
+const views = {
+  async Overview() {
+    const d = await api('/api/dashboard');
+    const st = d.by_status;
+    $('#view').innerHTML = `<div class="grid g4">
+      <div class="card stat"><b>${d.total}</b><span>Student records</span></div>
+      <div class="card stat"><b class="verified">${st.verified || 0}</b><span>Verified</span></div>
+      <div class="card stat"><b class="flagged">${(st.flagged || 0) + (st.rejected || 0)}</b><span>Flagged or rejected</span></div>
+      <div class="card stat"><b class="warning">${d.open_issues}</b><span>Open issues</span></div></div>
+      <div class="grid g2"><div class="card"><h3>Record status</h3><canvas id="c1"></canvas></div>
+      <div class="card"><h3>Intake utilisation (%)</h3><canvas id="c2"></canvas></div></div>
+      <div class="grid g2"><div class="card"><h3>Most common open issues</h3><div class="wrap"><table>
+        ${d.top_issues.map(i => `<tr><td>${esc(i.code)}</td><td>${sevb(i.severity)}</td><td>${i.c}</td></tr>`).join('') || '<tr><td class="muted">No open issues</td></tr>'}</table></div></div>
+      <div class="card"><h3>Categories</h3><table>${Object.entries(d.categories).map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table></div></div>
+      <div class="card"><h3>Institutions</h3><div class="wrap"><table><tr><th>Institution</th><th>State</th><th>Approved intake</th><th>Enrolled (regular)</th><th>Utilisation</th><th>Flagged</th></tr>
+      ${d.institutions.map(i => `<tr><td>${esc(i.name)}</td><td>${esc(i.state)}</td><td>${i.intake}</td><td>${i.enrolled}</td>
+      <td class="${i.utilisation_pct > 100 ? 'flagged' : ''}">${i.utilisation_pct ?? '–'}${i.utilisation_pct > 100 ? ' (excess)' : ''}</td><td>${i.flagged}</td></tr>`).join('')}</table></div></div>`;
+    if (typeof Chart === 'undefined') return;
+    Object.values(charts).forEach(c => c.destroy());
+    const cs = getComputedStyle(document.documentElement);
+    charts.a = new Chart($('#c1'), {type: 'doughnut', data: {labels: Object.keys(st), datasets: [{data: Object.values(st),
+      backgroundColor: Object.keys(st).map(k => cs.getPropertyValue({verified: '--green', warning: '--amber', flagged: '--red', rejected: '--blue'}[k] || '--mute'))}]}});
+    charts.b = new Chart($('#c2'), {type: 'bar', data: {labels: d.institutions.map(i => i.name.split(' ')[0]),
+      datasets: [{label: 'Utilisation %', data: d.institutions.map(i => i.utilisation_pct || 0), backgroundColor: cs.getPropertyValue('--teal')}]},
+      options: {plugins: {legend: {display: false}}}});
+  },
+
+  async Upload() {
+    $('#view').innerHTML = `<div class="card"><h2>Upload a CSV of admitted students</h2>
+      <p class="small muted">Columns: apaar_id, student_id, name, dob (YYYY-MM-DD), gender, course, academic_year, admission_date, category, seat_type (regular or supernumerary), nri, oci, foreign_national (yes/no), nationality, email, phone.</p>
+      <div class="row"><div><input type="file" id="f" accept=".csv"></div><div style="flex:0"><button class="btn" id="up">Upload and validate</button></div>
+      <div style="flex:0"><a href="/api/students/template.csv"><button class="btn alt" type="button">Template</button></a></div></div></div>
+      <div class="card"><h2>Add one student</h2><div class="row">
+      ${['apaar_id:APAAR ID', 'student_id:Student ID', 'name:Full name', 'dob:Date of birth:date', 'course:Course', 'academic_year:Academic year', 'nationality:Nationality'].map(x => { const [k, l, t] = x.split(':'); return `<div><label>${l}</label><input id="s_${k}" type="${t || 'text'}" ${k === 'academic_year' ? 'value="2026-27"' : ''} ${k === 'nationality' ? 'value="Indian"' : ''}></div>`; }).join('')}
+      <div><label>Seat type</label><select id="s_seat_type"><option>regular</option><option>supernumerary</option></select></div>
+      <div><label>NRI</label><select id="s_nri"><option value="">No</option><option value="1">Yes</option></select></div>
+      <div><label>OCI</label><select id="s_oci"><option value="">No</option><option value="1">Yes</option></select></div>
+      <div><label>Foreign national</label><select id="s_fn"><option value="">No</option><option value="1">Yes</option></select></div>
+      <div style="flex:0"><button class="btn" id="one">Add</button></div></div></div>
+      <div id="res"></div>`;
+    $('#up').onclick = guard(async () => {
+      const f = $('#f').files[0]; if (!f) return toast('Choose a CSV file first');
+      const fd = new FormData(); fd.append('file', f);
+      showResult(await api('/api/students/upload-csv', {method: 'POST', body: fd}));
+    });
+    $('#one').onclick = guard(async () => {
+      const b = {}; ['apaar_id', 'student_id', 'name', 'dob', 'course', 'academic_year', 'nationality', 'seat_type'].forEach(k => b[k] = $('#s_' + k).value);
+      b.nri = !!$('#s_nri').value; b.oci = !!$('#s_oci').value; b.foreign_national = !!$('#s_fn').value;
+      showResult(await api('/api/students', {method: 'POST', json: b}));
+    });
+  },
+
+  async Students() {
+    $('#view').innerHTML = `<div class="card"><div class="row"><div><label>Search name, APAAR ID or student ID</label><input id="q"></div>
+      <div><label>Status</label><select id="st"><option value="">All</option><option>verified</option><option>warning</option><option>flagged</option><option>rejected</option></select></div>
+      <div style="flex:0"><button class="btn" id="sb">Search</button></div></div></div>
+      <div class="card"><div class="wrap" id="tbl"></div></div><div id="detail"></div>`;
+    const load = guard(async () => {
+      const d = await api(`/api/students?limit=200&q=${encodeURIComponent($('#q').value)}&status=${$('#st').value}`);
+      $('#tbl').innerHTML = `<p class="small muted">${d.total} records</p><table><tr><th>APAAR ID</th><th>Name</th><th>Institution</th><th>Course</th><th>Seat</th><th>Status</th><th>Issues</th><th></th></tr>
+      ${d.items.map(s => `<tr><td>${esc(s.apaar_id)}</td><td>${esc(s.name)}</td><td>${esc(s.inst)}</td><td>${esc(s.course)}</td>
+      <td>${esc(s.seat_type)}${s.nri ? ' NRI' : ''}${s.oci ? ' OCI' : ''}${s.foreign_national ? ' FN' : ''}</td><td>${badge(s.status)}</td><td>${s.open_issues}</td>
+      <td><button class="btn alt sm" onclick="detail(${s.id})">Open</button></td></tr>`).join('')}</table>`;
+    });
+    $('#sb').onclick = load; load();
+  },
+
+  async Issues() {
+    const d = await api('/api/issues');
+    const canFix = S.role !== 'regulator';
+    $('#view').innerHTML = `<div class="card"><h2>Open issues (${d.length})</h2><div class="wrap"><table>
+      <tr><th>Severity</th><th>Issue</th><th>Student</th><th>Institution</th><th>Detail</th>${canFix ? '<th></th>' : ''}</tr>
+      ${d.map(i => `<tr><td>${sevb(i.severity)}</td><td>${esc(i.code)}</td><td>${esc(i.name)}<br><span class="small muted">${esc(i.apaar_id)}</span></td><td>${esc(i.inst)}</td><td>${esc(i.message)}</td>
+      ${canFix ? `<td><button class="btn alt sm" onclick="resolveIssue(${i.id})">Resolve</button></td>` : ''}</tr>`).join('') || '<tr><td>No open issues.</td></tr>'}</table></div></div>`;
+  },
+
+  async Anomalies() {
+    const d = await api('/api/anomalies');
+    $('#view').innerHTML = `<div class="card"><h2>Detected anomalies (${d.length})</h2>
+      <p class="small muted">Checks: excess enrolment, utilisation outliers (z-score), placeholder DOB clusters, sequential APAAR IDs, identity reuse, multi-institution enrolment and high error rates.</p>
+      <div class="wrap"><table><tr><th>Severity</th><th>Type</th><th>Institution</th><th>Detail</th></tr>
+      ${d.map(a => `<tr><td>${sevb(a.severity)}</td><td>${esc(a.type)}</td><td>${esc(a.institution)}</td><td>${esc(a.detail)}</td></tr>`).join('')}</table></div></div>`;
+  },
+
+  async Intake() {
+    const [insts, cs] = await Promise.all([api('/api/institutions'), api('/api/courses')]);
+    $('#view').innerHTML = `<div class="card"><h2>Set approved intake</h2><div class="row">
+      <div><label>Institution</label><select id="ci">${insts.map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('')}</select></div>
+      <div><label>Course</label><input id="cn"></div><div><label>Academic year</label><input id="cy" value="2026-27"></div>
+      <div><label>Approved intake</label><input id="ck" type="number" min="0"></div><div><label>Supernumerary cap</label><input id="cs" type="number" min="0" value="0"></div>
+      <div style="flex:0"><button class="btn" id="sv">Save</button></div></div></div>
+      <div class="card"><h2>Current approvals</h2><div class="wrap"><table><tr><th>Institution</th><th>Course</th><th>Year</th><th>Intake</th><th>Supernumerary</th></tr>
+      ${cs.map(c => `<tr><td>${esc(c.inst)}</td><td>${esc(c.name)}</td><td>${esc(c.academic_year)}</td><td>${c.approved_intake}</td><td>${c.supernumerary_cap}</td></tr>`).join('')}</table></div></div>
+      <div class="card"><h2>Integration key</h2><p class="small muted">Issue an API key so an institution's ERP can push data with the <code>X-API-Key</code> header.</p>
+      <button class="btn alt" id="kg">Generate key for selected institution</button><pre id="key" class="hide"></pre></div>`;
+    $('#sv').onclick = guard(async () => {
+      await api('/api/courses', {method: 'POST', json: {institution_id: +$('#ci').value, name: $('#cn').value, academic_year: $('#cy').value, approved_intake: +$('#ck').value, supernumerary_cap: +$('#cs').value}});
+      toast('Saved. Existing admissions were re-checked.'); views.Intake();
+    });
+    $('#kg').onclick = guard(async () => { const k = await api(`/api/institutions/${$('#ci').value}/api-key`, {method: 'POST'}); $('#key').classList.remove('hide'); $('#key').textContent = k.api_key + '\n' + k.note; });
+  },
+
+  async Reports() {
+    const R = [['institution-summary', 'Institution intake vs enrolment'], ['excess-enrolment', 'Excess enrolment'], ['state-wise', 'State-wise summary'], ['course-wise', 'Course-wise enrolment'], ['open-issues', 'Open data issues'], ['anomalies', 'Detected anomalies']];
+    $('#view').innerHTML = `<div class="card"><h2>Reports for policy, accreditation and monitoring</h2><table>
+      ${R.map(([k, l]) => `<tr><td>${l}</td><td><button class="btn alt sm" onclick="dl('${k}')">Download CSV</button></td></tr>`).join('')}</table></div>`;
+  },
+
+  async Audit() {
+    const d = await api('/api/audit?limit=200');
+    $('#view').innerHTML = `<div class="card"><h2>Audit trail</h2>
+      <p>${d.chain_intact ? '<span class="verified"><b>Chain intact.</b></span> No entry has been altered.' : `<span class="flagged"><b>Chain broken</b> at entry ${d.first_broken_id}.</span>`}</p>
+      <div class="wrap"><table><tr><th>Time</th><th>Actor</th><th>Role</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+      ${d.entries.map(e => `<tr><td>${esc(e.ts)}</td><td>${esc(e.actor)}</td><td>${esc(e.role)}</td><td>${esc(e.action)}</td><td>${esc(e.target)}</td><td>${esc(e.detail)}</td></tr>`).join('')}</table></div></div>`;
+  },
+
+  async Verify() {
+    $('#view').innerHTML = `<div class="card"><h2>Verify a student</h2><div class="row"><div><label>APAAR ID</label><input id="va"></div>
+      <div><label>Purpose</label><input id="vp" value="employment verification"></div><div style="flex:0"><button class="btn" id="vb">Verify</button></div></div><div id="vr"></div></div>
+      <div class="card"><h2>Check a verifiable record</h2><div class="row"><div><label>Record token</label><input id="vt"></div><div style="flex:0"><button class="btn alt" id="vc">Check</button></div></div><div id="vtr"></div></div>`;
+    $('#vb').onclick = guard(async () => {
+      const d = await api('/api/verify', {method: 'POST', json: {apaar_id: $('#va').value, purpose: $('#vp').value}});
+      $('#vr').innerHTML = !d.found ? '<p class="flagged">No record found for this APAAR ID.</p>' :
+        `<p>${d.verified ? '<b class="verified">Verified enrolment</b>' : '<b class="flagged">Records exist but are not verified</b>'} · ${esc(d.apaar_id)}</p>
+        <table><tr><th>Name</th><th>Institution</th><th>Course</th><th>Year</th><th>Student ID</th><th>Status</th></tr>${d.records.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.institution)}</td><td>${esc(r.course)}</td><td>${esc(r.academic_year)}</td><td>${esc(r.student_id)}</td><td>${badge(r.record_status)}</td></tr>`).join('')}</table>`;
+    });
+    $('#vc').onclick = guard(async () => {
+      const d = await api('/api/records/check/' + encodeURIComponent($('#vt').value.trim()));
+      $('#vtr').innerHTML = d.record ? `<p>${d.valid ? '<b class="verified">Authentic record</b>' : '<b class="flagged">Not valid</b>'} (signature ${d.signature_ok ? 'ok' : 'bad'}, live status ${esc(d.live_status)})</p><pre>${esc(JSON.stringify(d.record, null, 2))}</pre>` : `<p class="flagged">${esc(d.reason)}</p>`;
+    });
+  }
+};
+
+function showResult(d) {
+  const bad = d.results.filter(r => r.issues.length);
+  $('#res').innerHTML = `<div class="card"><h2>Validation result</h2><p>${d.count} rows processed: ${Object.entries(d.summary).map(([k, v]) => `${badge(k)} ${v}`).join('  ')}</p>
+  ${bad.length ? `<div class="wrap"><table><tr><th>Row</th><th>APAAR ID</th><th>Status</th><th>Problems</th></tr>${bad.map(r => `<tr><td>${r.row}</td><td>${esc(r.apaar_id)}</td><td>${badge(r.status)}</td><td>${r.issues.map(i => `<div class="issue">${sevb(i.severity)} ${esc(i.message)}</div>`).join('')}</td></tr>`).join('')}</table></div>` : '<p class="verified">All rows passed validation.</p>'}</div>`;
+}
+
+window.detail = guard(async id => {
+  const s = await api('/api/students/' + id);
+  const own = S.role !== 'regulator';
+  $('#detail').innerHTML = `<div class="card"><h2>${esc(s.name)} <span class="muted small">${esc(s.apaar_id)}</span> ${badge(s.status)}</h2>
+  <p class="small">${esc(s.inst)} · ${esc(s.course)} · ${esc(s.academic_year)} · Student ID ${esc(s.student_id)} · DOB ${esc(s.dob)}${s.email ? ' · ' + esc(s.email) : ''}${s.phone ? ' · ' + esc(s.phone) : ''}</p>
+  ${s.issues.map(i => `<div class="issue">${sevb(i.severity)} <b>${esc(i.code)}</b> ${esc(i.message)} ${i.resolved ? '<span class="muted">(resolved: ' + esc(i.resolution_note) + ')</span>' : own ? `<button class="btn alt sm" onclick="resolveIssue(${i.id},${id})">Resolve</button>` : ''}</div>`).join('') || '<p class="verified">No issues.</p>'}
+  ${own && s.status !== 'rejected' ? `<p><button class="btn sm" onclick="certLine(${id})">Certificate line and verification token</button></p><pre id="cert" class="hide"></pre>` : ''}</div>`;
+  $('#detail').scrollIntoView({behavior: 'smooth'});
+});
+window.resolveIssue = guard(async (id, sid) => {
+  const note = prompt('Why is this issue resolved? (min 5 characters)'); if (!note) return;
+  await api(`/api/issues/${id}/resolve`, {method: 'POST', json: {note}}); toast('Issue resolved');
+  sid ? detail(sid) : render();
+});
+window.certLine = guard(async id => {
+  const c = await api('/api/certificate/' + id, {});
+  $('#cert').classList.remove('hide'); $('#cert').textContent = c.line + '\nVerify token: ' + c.verify_token + '\nVerify URL: ' + location.origin + c.verify_url;
+});
+window.dl = guard(async k => {
+  const r = await fetch(`/api/reports/${k}?format=csv`, {headers: {Authorization: 'Bearer ' + S.token}});
+  if (!r.ok) throw new Error('Report failed');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(await r.blob()); a.download = k + '.csv'; a.click();
+});
+render();
+</script>
+</body>
+</html>
